@@ -11,6 +11,7 @@
 #include <pthread.h>
 #include "tcpServer.h"
 
+int quiet;
 
 int createTcpServer(unsigned short listenPort, int cliNum, void * (*start_routine) (void *)) {
     int servSockFd = socket(AF_INET, SOCK_STREAM, 0);

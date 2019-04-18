@@ -12,6 +12,7 @@
 #include "tcpServer.h"
 
 void * clientRoutine(void *arg) {
+    extern int quiet;
     static int cliNum;
     const CliMsg *pcli = (const CliMsg *)arg;
     CliMsg cli = *pcli;
@@ -27,7 +28,9 @@ void * clientRoutine(void *arg) {
             goto quit;
         }
         printf("%s:%d - %s", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, line);
-        fprintf(fp, "You Said: %s", line);
+        if(!quiet) {
+            fprintf(fp, "You Said: %s", line);
+        }
     }
 
 quit:
