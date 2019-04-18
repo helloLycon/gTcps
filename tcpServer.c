@@ -1,0 +1,52 @@
+#include <stdio.h>
+#include <string.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include "tcpServer.h"
+
+
+int createTcpServer(unsigned short listenPort, int cliNum, void * (*start_routine) (void *)) {
+    int servSockFd = socket(AF_INET, SOCK_STREAM, 0);
+    if(servSockFd < 0) {
+        perror("socket");
+        exit(1);
+    }
+    struct sockaddr_in servAddr;
+    servAddr.sin_family = AF_INET;
+    servAddr.sin_port = htons(listenPort);
+    servAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (bind(servSockFd, (struct sockaddr *) &servAddr, sizeof(struct sockaddr_in)) < 0) {
+        perror("bind");
+        exit(1);
+    }
+    if(listen(servSockFd, cliNum)<0) {
+        perror("listen");
+        exit(1);
+    }
+
+    printf("listen on %d ...\n", listenPort);
+    for(;;) {
+        socklen_t cliAddrLen = sizeof (struct sockaddr_in);
+        CliMsg cli;
+        cli.fd = accept(servSockFd, (struct sockaddr *) &cli.addr, &cliAddrLen);
+        if(cli.fd < 0) {
+            perror("accept");
+            exit(1);
+        }
+
+        /* accept a client here */
+        //printf("%s connected!\n", cli.addr.sa_data);
+
+        pthread_t tid;
+        pthread_create(&tid, NULL, start_routine, &cli);
+        pthread_detach(tid);
+    }
+}
+
