@@ -1,7 +1,7 @@
 target=genericTcpServer
 
-${target}: *.c *.h
-	gcc *.c -pthread -o $@
+${target}: *.cpp *.h
+	g++ *.cpp -pthread -o $@
 
 clean:
 	rm -f ${target}
