@@ -10,17 +10,24 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include "tcpServer.h"
+#include <set>
+
+using namespace std;
+
+set<int> fdSet;
+pthread_mutex_t fdMutex = PTHREAD_MUTEX_INITIALIZER;
 
 void * clientRoutine(void *arg) {
     extern int quiet;
-    static int cliNum;
     const CliMsg *pcli = (const CliMsg *)arg;
     CliMsg cli = *pcli;
     FILE *fp = fdopen(cli.fd, "r+");
     char line[1024];
-    
-    cliNum++;
-    printf("%s:%d connected! (%d)\n", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, cliNum);
+
+    pthread_mutex_lock(&fdMutex);
+    fdSet.insert(cli.fd);
+    printf("%s:%d connected! (%d)\n", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, fdSet.size());
+    pthread_mutex_unlock(&fdMutex);
     fprintf(fp, "hello~\r\n");
     for(; fgets(line, sizeof line, fp) ;) {
         if( !strncmp("quit", line, 4) ) {
@@ -34,8 +41,10 @@ void * clientRoutine(void *arg) {
     }
 
 quit:
-    cliNum--;
-    printf("%s:%d diconneted! (%d)\n", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, cliNum);
+    pthread_mutex_lock(&fdMutex);
+    fdSet.erase(cli.fd);
+    printf("%s:%d diconneted! (%d)\n", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, fdSet.size());
+    pthread_mutex_unlock(&fdMutex);
     fclose(fp);
     pthread_exit(NULL);
 }

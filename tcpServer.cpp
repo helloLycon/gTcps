@@ -12,9 +12,10 @@
 #include "tcpServer.h"
 
 int quiet;
+int servSockFd;
 
 int createTcpServer(unsigned short listenPort, int cliNum, void * (*start_routine) (void *)) {
-    int servSockFd = socket(AF_INET, SOCK_STREAM, 0);
+    servSockFd = socket(AF_INET, SOCK_STREAM, 0);
     if(servSockFd < 0) {
         perror("socket");
         exit(1);
