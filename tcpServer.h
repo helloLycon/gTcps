@@ -8,6 +8,7 @@
 typedef struct  {
     int fd;
     struct sockaddr_in addr;
+    int msgCount;
 } CliMsg;
 
 

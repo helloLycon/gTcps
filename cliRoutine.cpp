@@ -29,12 +29,13 @@ void * clientRoutine(void *arg) {
     printf("%s:%d connected! (%d)\n", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, fdSet.size());
     pthread_mutex_unlock(&fdMutex);
     fprintf(fp, "hello~\r\n");
-    for(; fgets(line, sizeof line, fp) ;) {
+    for(cli.msgCount=0; fgets(line, sizeof line, fp) ;) {
         if( !strncmp("quit", line, 4) ) {
             fprintf(fp, "\r\nSee you~\r\n");
             goto quit;
         }
-        printf("%s:%d - %s", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, line);
+        cli.msgCount++;
+        printf("%s:%d - [%d]%s", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, cli.msgCount, line);
         if(!quiet) {
             fprintf(fp, "You Said: %s", line);
         }
