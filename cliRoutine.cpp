@@ -43,7 +43,7 @@ void * clientRoutine(void *arg) {
 quit:
     pthread_mutex_lock(&fdMutex);
     fdSet.erase(cli.fd);
-    printf("%s:%d diconneted! (%d)\n", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, fdSet.size());
+    printf("%s:%d disconnected! (%d)\n", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, fdSet.size());
     pthread_mutex_unlock(&fdMutex);
     fclose(fp);
     pthread_exit(NULL);
