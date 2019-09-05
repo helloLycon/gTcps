@@ -37,7 +37,7 @@ void * clientRoutine(void *arg) {
         cli.msgCount++;
         printf("%s:%d - [%d]%s", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, cli.msgCount, line);
         if(!quiet) {
-            fprintf(fp, "You Said: %s", line);
+            fprintf(fp, "Your %dth message\r\n", cli.msgCount);
         }
     }
 
