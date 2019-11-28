@@ -6,6 +6,7 @@ build
 # source insight
 *.si4project
 genericTcpServer
+gTcps
 
 # Prerequisites
 *.d
