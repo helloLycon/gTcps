@@ -1,4 +1,4 @@
-target=genericTcpServer
+target=gTcps
 
 ${target}: *.cpp *.h
 	g++ *.cpp -pthread -o $@
