@@ -16,14 +16,13 @@ using namespace std;
 void *stdin_routine(void *arg) {
     extern set<int> fdSet;
     extern pthread_mutex_t fdMutex;
+    extern CliMsg newcomeClient;
+    extern int servSockFd;
 
     char line[1024];
     for(; fgets(line, sizeof line, stdin) ;) {
         pthread_mutex_lock(&fdMutex);
-        for(set<int>::iterator it=fdSet.begin(); it!=fdSet.end(); it++) {
-            //printf("fd = %d\n", *it);
-            dprintf(*it, "%s\r", line);
-        }
+        sendto(servSockFd, line, strlen(line), 0, (struct sockaddr *)&newcomeClient.addr, sizeof(newcomeClient.addr));
         pthread_mutex_unlock(&fdMutex);
     }
     return NULL;
@@ -42,6 +41,9 @@ int main(int argc, char **argv) {
         quiet = 1;
     }
 
+    pthread_t tid;
+    pthread_create(&tid, NULL, stdin_routine, NULL);
+    pthread_detach(tid);
     createTcpServer(atoi(argv[argc-1]), 16, clientRoutine);
     return 0;
 }

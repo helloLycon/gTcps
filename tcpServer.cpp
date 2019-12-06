@@ -13,6 +13,8 @@
 
 int quiet;
 int servSockFd;
+CliMsg newcomeClient;
+
 
 int createTcpServer(unsigned short listenPort, int cliNum, void * (*start_routine) (void *)) {
     servSockFd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -36,8 +38,15 @@ int createTcpServer(unsigned short listenPort, int cliNum, void * (*start_routin
         char buf[1024];
         ssize_t sz = recvfrom(servSockFd, buf, sizeof(buf)-1, 0, (struct sockaddr *)&cli.addr, &cliAddrLen);
         if(sz > 0) {
+            /* update the newcome client */
+            extern pthread_mutex_t fdMutex;
+            pthread_mutex_lock(&fdMutex);
+            newcomeClient = cli;
+            pthread_mutex_unlock(&fdMutex);
+
+            /* reply msg */
             buf[sz] = '\0';
-            printf("%s:%d - %s", inet_ntoa(cli.addr.sin_addr), ntohs(cli.addr.sin_port), buf);
+            printf("%s:%d - %s%s", inet_ntoa(cli.addr.sin_addr), ntohs(cli.addr.sin_port), buf, buf[sz-1]=='\n'?"":"\r\n");
             int end = sz>3?3:sz;
             buf[end] = '\r';
             buf[end+1] = '\n';
