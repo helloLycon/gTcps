@@ -42,9 +42,6 @@ int main(int argc, char **argv) {
         quiet = 1;
     }
 
-    pthread_t tid;
-    pthread_create(&tid, NULL, stdin_routine, NULL);
-    pthread_detach(tid);
     createTcpServer(atoi(argv[argc-1]), 16, clientRoutine);
     return 0;
 }

@@ -15,7 +15,7 @@ int quiet;
 int servSockFd;
 
 int createTcpServer(unsigned short listenPort, int cliNum, void * (*start_routine) (void *)) {
-    servSockFd = socket(AF_INET, SOCK_STREAM, 0);
+    servSockFd = socket(AF_INET, SOCK_DGRAM, 0);
     if(servSockFd < 0) {
         perror("socket");
         exit(1);
@@ -28,27 +28,22 @@ int createTcpServer(unsigned short listenPort, int cliNum, void * (*start_routin
         perror("bind");
         exit(1);
     }
-    if(listen(servSockFd, cliNum)<0) {
-        perror("listen");
-        exit(1);
-    }
 
-    printf("listen on %d ...\n", listenPort);
+    printf("receive messages on %d ...\n", listenPort);
     for(;;) {
         socklen_t cliAddrLen = sizeof (struct sockaddr_in);
         CliMsg cli;
-        cli.fd = accept(servSockFd, (struct sockaddr *) &cli.addr, &cliAddrLen);
-        if(cli.fd < 0) {
-            perror("accept");
-            exit(1);
+        char buf[1024];
+        ssize_t sz = recvfrom(servSockFd, buf, sizeof(buf)-1, 0, (struct sockaddr *)&cli.addr, &cliAddrLen);
+        if(sz > 0) {
+            buf[sz] = '\0';
+            printf("%s:%d - %s", inet_ntoa(cli.addr.sin_addr), ntohs(cli.addr.sin_port), buf);
+            int end = sz>3?3:sz;
+            buf[end] = '\r';
+            buf[end+1] = '\n';
+            buf[end+2] = 0;
+            sendto(servSockFd, buf, strlen(buf), 0, (struct sockaddr *)&cli.addr, sizeof(cli.addr));
         }
-
-        /* accept a client here */
-        //printf("%s connected!\n", cli.addr.sa_data);
-
-        pthread_t tid;
-        pthread_create(&tid, NULL, start_routine, &cli);
-        pthread_detach(tid);
     }
 }
 
