@@ -11,6 +11,7 @@
 #include <pthread.h>
 #include "tcpServer.h"
 #include <set>
+#include "imsi-catcher.h"
 
 using namespace std;
 
@@ -21,13 +22,15 @@ void * clientRoutine(void *arg) {
     extern int quiet;
     const CliMsg *pcli = (const CliMsg *)arg;
     CliMsg cli = *pcli;
-    FILE *fp = fdopen(cli.fd, "r+");
+    //FILE *fp = fdopen(cli.fd, "r+");
     char line[1024];
 
     pthread_mutex_lock(&fdMutex);
     fdSet.insert(cli.fd);
-    printf("%s:%d connected! (%d)\n", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, fdSet.size());
+    printf("%s:%d connected! (%d, fd=%d)\n", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, fdSet.size(), cli.fd);
     pthread_mutex_unlock(&fdMutex);
+
+#if  0
     fprintf(fp, "hello~\r\n");
     for(cli.msgCount=0; fgets(line, sizeof line, fp) ;) {
         if( !strncmp("quit", line, 4) ) {
@@ -40,13 +43,16 @@ void * clientRoutine(void *arg) {
             fprintf(fp, "You Said: %s", line);
         }
     }
+#endif
+    imsi_catcher_routine(cli.fd, NULL);
 
 quit:
     pthread_mutex_lock(&fdMutex);
     fdSet.erase(cli.fd);
     printf("%s:%d disconnected! (%d)\n", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, fdSet.size());
     pthread_mutex_unlock(&fdMutex);
-    fclose(fp);
+    //fclose(fp);
+    close(cli.fd);
     pthread_exit(NULL);
 }
 
