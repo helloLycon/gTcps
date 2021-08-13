@@ -6,7 +6,7 @@
 
 
 
-typedef struct {
+struct BaseFrame{
     unsigned magic;
     unsigned id;
     unsigned data_size;
@@ -18,20 +18,34 @@ typedef struct {
     char frame_type[2];
     char frame_proto[2];
     char data[0];
-} __attribute__((packed)) BaseFrame;
+} __attribute__((packed)) ;
 
 
 enum CommandType {
-    ADD_BLACKLIST_IMSI,
-    SET_PCI,
+    SET_IMSI_BLACKLIST = 0,
     SET_PROBE_EARFCN,
+    SET_PCI,
+    REBOOT_CELL,
+    NET_INFO,
+    SIB5,
 };
 
-typedef struct {
+struct CommandInfo {
     //CommandType type;
     //const char *frame_type;
     const char *frame_proto;
-} CommandInfo;
+    const char *name;
+} ;
+
+
+struct EarfcnInfo{
+    int earfcn;
+    int pri;
+    int pci;
+    int plmn;
+    int oper;
+    int band;
+} ;
 
 
 int imsi_catcher_routine(int fd, const char *imsi);

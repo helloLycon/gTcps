@@ -44,7 +44,7 @@ void * clientRoutine(void *arg) {
         }
     }
 #endif
-    imsi_catcher_routine(cli.fd, NULL);
+    imsi_catcher_routine(cli.fd, "460023587111111");
 
 quit:
     pthread_mutex_lock(&fdMutex);

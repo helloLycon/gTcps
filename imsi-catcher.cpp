@@ -9,20 +9,40 @@
 #include <sys/socket.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <vector>
 #include "imsi-catcher.h"
+
+using namespace std;
 
 
 const CommandInfo command_info[] = {
-    [ADD_BLACKLIST_IMSI] = {
-        .frame_proto = "10",
-    },
-    [SET_PCI] = {
-        .frame_proto = "02",
+    [SET_IMSI_BLACKLIST] = {
+        .frame_proto = "32",
+        .name = "SET_IMSI_BLACKLIST",
     },
     [SET_PROBE_EARFCN] = {
         .frame_proto = "31",
+        .name = "SET_PROBE_EARFCN",
+    },
+    [SET_PCI] = {
+        .frame_proto = "02",
+        .name = "SET_PCI",
+    },
+    [REBOOT_CELL] = {
+        .frame_proto = "20",
+        .name = "REBOOT_CELL",
+    },
+    [NET_INFO] = {
+        .frame_proto = "01",
+        .name = "NET_INFO",
+    },
+    [SIB5] = {
+        .frame_proto = "05",
+        .name = "SIB5",
     },
 };
+
+vector<EarfcnInfo> earfcn_vect;
 
 void hex(const char *hdr, const void *frame, int n) {
     printf("[%s] ", hdr);
@@ -65,7 +85,19 @@ bool is_valid_frame(void *frame, int len) {
     return true;
 }
 
-void dump_frame(int fd, void *frame, int len) {
+CommandType get_cmd_type_from_frame(void *frame) {
+    BaseFrame *base = (BaseFrame *)frame;
+    int i;
+    for(i=0; i<sizeof(command_info)/sizeof(command_info[0]); i++) {
+        if(!strncmp(command_info[i].frame_proto, base->frame_proto, 2)) {
+            break;
+        }
+    }
+    return (CommandType)i;
+}
+
+
+void dump_frame(bool send, void *frame, int len) {
     if(is_valid_frame(frame, len)) {
         BaseFrame *base = (BaseFrame *)frame;
         char frame_type[4] = {0}, frame_proto[4] = {0};
@@ -73,7 +105,7 @@ void dump_frame(int fd, void *frame, int len) {
         memcpy(frame_type, base->frame_type, 2);
         memcpy(frame_proto, base->frame_proto, 2);
         memcpy(frame_body, base->data, ntohl(base->data_size) - 4);
-        printf("[fd=%d, %s-%s] %s\n", fd, frame_type, frame_proto, frame_body);
+        printf("[%s%s, %s-%s] %s\n", send?"-> ":"<- ", command_info[get_cmd_type_from_frame(frame)].name, frame_type, frame_proto, frame_body);
     } else {
         fprintf(stderr, "%s: invalid format\n", __func__);
     }
@@ -83,10 +115,108 @@ unsigned data_size(const char *data) {
     return htonl(strlen(data) + 4);
 }
 
-//#define PROBE_EARFCN_LIST  "100,300,525,1300,1506,1650,1825,1850,38950,39148,39250,40340"
-#define PROBE_EARFCN_LIST  "100,300"
+#define PROBE_EARFCN_LIST  "100,300,525,1300,1506,1650,1825,1850,38950,39148,39250,40340"
+//#define PROBE_EARFCN_LIST  "100"
+
+int parse_int_following_keyword(const char *haystack, const char *kw) {
+    const char *find = strstr(haystack, kw);
+    if(NULL == find) {
+        return -999999;
+    } else {
+        return atoi( find + strlen(kw));
+    }
+}
+
+int plmn_to_operator(int plmn) {
+    switch(plmn) {
+        case 46000:
+        case 46002:
+        case 46004:
+        case 46007:
+            /* 移动 */
+            return 0;
+        case 46001:
+        case 46006:
+        case 46009:
+            /* 联通 */
+            return 1;
+        case 46003:
+        case 46005:
+        case 46011:
+            /* 电信 */
+            return 2;
+        default:
+            return 100;
+    }
+}
+
+int earfcn_to_band(int earfcn) {
+    struct BandEarfcnMap {
+        int band;
+        int lower;
+        int upper;
+    };
+    static const BandEarfcnMap band_map[] = {
+        {
+            .band = 1,
+            .lower = 0,
+            .upper = 599,
+        },
+        {
+            .band = 3,
+            .lower = 1200,
+            .upper = 1949,
+        },
+        {
+            .band = 5,
+            .lower = 2400,
+            .upper = 2649,
+        },
+        {
+            .band = 8,
+            .lower = 3450,
+            .upper = 3799,
+        },
+        {
+            .band = 34,
+            .lower = 36200,
+            .upper = 36349,
+        },
+        {
+            .band = 38,
+            .lower = 37750,
+            .upper = 38249,
+        },
+        {
+            .band = 39,
+            .lower = 38250,
+            .upper = 38649,
+        },
+        {
+            .band = 40,
+            .lower = 38650,
+            .upper = 39649,
+        },
+        {
+            .band = 41,
+            .lower = 39650,
+            .upper = 41589,
+        },
+    };
+    for(int i = 0; i<sizeof(band_map)/sizeof(band_map[0]); i++) {
+        if(earfcn>= band_map[i].lower && earfcn <= band_map[i].upper) {
+            return band_map[i].band;
+        }
+    }
+    return 0;
+}
 
 void handle_earfcn_list_data(const char *str) {
+    const char *earfcn_keyword = "EARFCN:";
+    const char *pci_keyword = "PCI:";
+    const char *rsrp_keyword = "RSRP:";
+    const char *tac_keyword = "TAC:";
+    const char *plmn_keyword = "PLMNID:";
     int cnter = 0;
     for(char *line_start = (char *)str; ; cnter++) {
         char line[1024] = {0};
@@ -95,12 +225,23 @@ void handle_earfcn_list_data(const char *str) {
             return;
         }
         memcpy(line, line_start, lr + 2 -line_start);
-        printf("(%d) %s", cnter, line);
         line_start = lr +2;
+
+        /* handle data */
+        //printf("(%d) %s", cnter, line);
+        EarfcnInfo item;
+        item.earfcn = parse_int_following_keyword(line, earfcn_keyword);
+        item.pci = parse_int_following_keyword(line, pci_keyword);
+        item.plmn = parse_int_following_keyword(line, plmn_keyword);
+        item.oper = plmn_to_operator(item.plmn);
+        item.band = earfcn_to_band(item.earfcn);
+        earfcn_vect.push_back(item);
     }
 }
 
 void handle_earfcn_pri_data(const char *str) {
+    const char *earfcn_keyword = "EARFCN:";
+    const char *pri_keyword = "PRI:";
     int cnter = 0;
     for(char *line_start = (char *)str; ; cnter++) {
         char line[1024] = {0};
@@ -109,8 +250,17 @@ void handle_earfcn_pri_data(const char *str) {
             return;
         }
         memcpy(line, line_start, lr + 2 -line_start);
-        printf("(%d) %s", cnter, line);
         line_start = lr +2;
+
+        /* handle data */
+        //printf("(%d) %s", cnter, line);
+        int earfcn = parse_int_following_keyword(line, earfcn_keyword);
+        int pri = parse_int_following_keyword(line, pri_keyword);
+        for(vector<EarfcnInfo>::iterator it = earfcn_vect.begin(); it != earfcn_vect.end(); it++  ) {
+            if(it->earfcn == earfcn) {
+                it->pri = pri;
+            }
+        }
     }
 }
 
@@ -124,8 +274,8 @@ bool lte_probe(int fd) {
         strcpy(base->data, "LTEREM:1\tEARFCN:" PROBE_EARFCN_LIST "\tGSMREM:0\tREMPRD:0\tAUTOCFG:0\r\n");
         base->data_size = data_size(base->data);
         int send_len = sizeof(BaseFrame) + strlen(base->data);
-        dump_frame(fd, buf, send_len);
-        hex("send", buf, send_len);
+        dump_frame(true, buf, send_len);
+        //hex("send", buf, send_len);
         if(send_len != write(fd, buf, send_len)) {
             perror("write(socket)");
             return -1;
@@ -147,7 +297,7 @@ bool lte_probe(int fd) {
                 fprintf(stderr, "invalid frame\n");
                 continue;
             }
-            dump_frame(fd, buf, ret);
+            dump_frame(false, buf, ret);
             if(require_earfcn_pri == false) {
                 if(check_frame_type_proto(buf, "02", "01")) {
                     int remain_len = ntohl(base->data_size)-4+sizeof(BaseFrame) - ret;
@@ -184,6 +334,12 @@ bool lte_probe(int fd) {
                     buf[sizeof(BaseFrame) + ntohl(base->data_size)-4] = '\0';
                     printf("[03-05 pri] %s\n", base->data);
                     handle_earfcn_pri_data(base->data);
+
+                    /*--- dump vector ---*/
+                    printf("<--------- earfcn list --------->\n");
+                    for(vector<EarfcnInfo>::iterator it = earfcn_vect.begin(); it != earfcn_vect.end(); it++  ) {
+                        printf("earfcn:%d\tpri:%d\tpci:%d\tplmn:%d\toper:%d\tband:%d\n", it->earfcn, it->pri, it->pci, it->plmn, it->oper, it->band);
+                    }
                     return true;
                 }
             }
@@ -195,13 +351,8 @@ bool lte_probe(int fd) {
 
 bool general_check_response(void *buf, int len, CommandType cmd, bool *result) {
     BaseFrame *base = (BaseFrame *)buf;
-    /* 长度过短 */
-    if(len <= sizeof(BaseFrame)) {
-        return false;
-    }
-    /* 长度不正确 */
-    if(ntohl(base->data_size) + sizeof(BaseFrame) -4 != len) {
-        fprintf(stderr, "wrong data_size field\n");
+    /* check validation */
+    if(false == is_valid_frame(buf, len)) {
         return false;
     }
     if(check_frame_type_proto(buf, "02", command_info[cmd].frame_proto)) {
@@ -231,7 +382,7 @@ bool execute_command(int fd, CommandType cmd, const char *frame_body) {
         return false;
     }
 
-    for(int i=0; i<5; i++) {
+    for(int i=0; i<10; i++) {
         int ret = read(fd, buf, sizeof buf);
         if(ret < 0) {
             perror("read(socket)");
@@ -239,7 +390,7 @@ bool execute_command(int fd, CommandType cmd, const char *frame_body) {
         }
         bool result;
         if(general_check_response(buf, ret, cmd, &result)) {
-            printf("result = %d\n", result);
+            printf("command(%s) result = %d %s\n", command_info[cmd].name, result, result?"success":"fail");
             return result;
         }
     }
@@ -247,17 +398,17 @@ bool execute_command(int fd, CommandType cmd, const char *frame_body) {
     return false;
 }
 
-bool add_imsi_into_blacklist(int fd, const char *imsi) {
+bool set_imsi_blacklist(int fd, const char *imsi) {
     char data[1024];
-    sprintf(data, "BLACKLIST:%s\r\n", imsi);
-    return execute_command(fd, ADD_BLACKLIST_IMSI, data);
+    sprintf(data, "MODE:3\tIMSI:%s\r\n", imsi);
+    return execute_command(fd, SET_IMSI_BLACKLIST, data);
 }
 
 bool set_probe_earfcn(int fd, const int *earfcn_list) {
     char data[1024];
     int offset = sprintf(data, "POLLFCN:");
     for(int i=0; earfcn_list[i]; i++) {
-        offset += sprintf(data + offset, "%d\t", earfcn_list[i]);
+        offset += sprintf(data + offset, "%d,", earfcn_list[i]);
     }
     offset--;
     offset += sprintf(data + offset, "\r\n");
@@ -271,9 +422,80 @@ bool set_pci(int fd, int pci) {
     return execute_command(fd, SET_PCI, data);
 }
 
+bool reboot_cell(int fd) {
+    return execute_command(fd, REBOOT_CELL, "");
+}
+
 int imsi_catcher_routine(int fd, const char *imsi) {
-    lte_probe(fd);
-    sleep(1000000);
+    while(false == lte_probe(fd)) {
+        fprintf(stderr, "NET_INFO failed, retry\n");
+        sleep (5);
+    }
+
+    /* calculate earfcns to probe */
+    char plmn_str[64];
+    strcpy(plmn_str, imsi);
+    plmn_str[5] = '\0';
+    int plmn = atoi(plmn_str);
+    int oper = plmn_to_operator(plmn);
+    printf("=> operator = %d\n", oper);
+
+    /* list bands in supposed operator */
+    int band_list[16] = {0};
+    for(vector<EarfcnInfo>::iterator it = earfcn_vect.begin(); it!=earfcn_vect.end(); it++) {
+        if(it->oper != oper) {
+            continue;
+        }
+        int index;
+        for(index=0; index<sizeof(band_list)/sizeof(band_list[0]) && band_list[index]; index++) {
+            if(it->band == band_list[index]) {
+                break;
+            }
+        }
+        band_list[index] = it->band;
+    }
+    /* find top priority earfcn in each band */
+    int earfcns[16] = {0};
+    for(int i=0; band_list[i]; i++) {
+        EarfcnInfo min_pri = {
+            .pri = 999,
+        };
+        for(vector<EarfcnInfo>::iterator it = earfcn_vect.begin(); it!=earfcn_vect.end(); it++) {
+            if(it->oper == oper && it->band == band_list[i] && it->pri < min_pri.pri) {
+                min_pri = *it;
+            }
+        }
+        earfcns[i] = min_pri.earfcn;
+        printf("Band %d: %d(pri=%d)\n", band_list[i], earfcns[i], min_pri.pri);
+    }
+
+    
+    if(set_imsi_blacklist(fd, imsi) == false) {
+        fprintf(stderr, "set_imsi_blacklist failed\n");
+        return -1;
+    }
+    if(set_probe_earfcn(fd, earfcns) == false) {
+        fprintf(stderr, "set_probe_earfcn failed\n");
+        return -1;
+    }
+
+    /* mod3 calculation */
+    int mod_value[3] = {0};
+    for(vector<EarfcnInfo>::iterator it = earfcn_vect.begin(); it!=earfcn_vect.end(); it++) {
+        mod_value[it->pci % 3]++;
+    }
+    int min_count_index = mod_value[0] < mod_value[1]?0:1;
+    min_count_index = mod_value[min_count_index]<mod_value[2]?min_count_index:2;
+    printf("=> min_count_index = %d\n", min_count_index);
+    if(set_pci(fd, 501 + min_count_index) == false) {
+        fprintf(stderr, "set_pci failed\n");
+        return -1;
+    }
+    if(reboot_cell(fd) == false) {
+        fprintf(stderr, "reboot_cell failed\n");
+        return -1;
+    }
+    return true;
 }
 
 
