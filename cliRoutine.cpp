@@ -15,7 +15,6 @@
 
 using namespace std;
 
-set<int> fdSet;
 pthread_mutex_t fdMutex = PTHREAD_MUTEX_INITIALIZER;
 
 void * clientRoutine(void *arg) {
@@ -25,10 +24,6 @@ void * clientRoutine(void *arg) {
     //FILE *fp = fdopen(cli.fd, "r+");
     char line[1024];
 
-    pthread_mutex_lock(&fdMutex);
-    fdSet.insert(cli.fd);
-    printf("%s:%d connected! (%d, fd=%d)\n", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, fdSet.size(), cli.fd);
-    pthread_mutex_unlock(&fdMutex);
 
 #if  0
     fprintf(fp, "hello~\r\n");
@@ -48,10 +43,8 @@ void * clientRoutine(void *arg) {
 
 quit:
     pthread_mutex_lock(&fdMutex);
-    fdSet.erase(cli.fd);
-    printf("%s:%d disconnected! (%d)\n", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, fdSet.size());
+    printf("%s:%d disconnected!\n", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port);
     pthread_mutex_unlock(&fdMutex);
-    //fclose(fp);
     close(cli.fd);
     pthread_exit(NULL);
 }

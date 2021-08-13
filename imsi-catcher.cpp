@@ -9,11 +9,16 @@
 #include <sys/socket.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <ctype.h>
 #include <vector>
 #include "imsi-catcher.h"
+#include "tcpServer.h"
+#include "cliRoutine.h"
 
 using namespace std;
 
+pthread_mutex_t imsiMutex = PTHREAD_MUTEX_INITIALIZER;
+char imsi_to_catch[16];
 
 const CommandInfo command_info[] = {
     [SET_IMSI_BLACKLIST] = {
@@ -43,6 +48,31 @@ const CommandInfo command_info[] = {
 };
 
 vector<EarfcnInfo> earfcn_vect;
+
+bool is_imsi(const char *str) {
+    int len = strlen(str);
+    if(len != 15) {
+        return false;
+    }
+    for(int i=0; i<len; i++) {
+        if(!isdigit(str[i])) {
+            return false;
+        }
+    }
+    if(strncmp(str, "460", 3)) {
+        return false;
+    }
+    return true;
+}
+
+ssize_t new_read(int fd, void *buf, size_t count) {
+    return read(curr_fd(), buf, count);
+}
+
+ssize_t new_write(int fd, const void *buf, size_t count) {
+    return write(curr_fd(), buf, count);
+}
+
 
 void hex(const char *hdr, const void *frame, int n) {
     printf("[%s] ", hdr);
@@ -265,31 +295,42 @@ void handle_earfcn_pri_data(const char *str) {
 }
 
 bool lte_probe(int fd) {
-    static bool sent = false;
+    /* 检查公网扫描信息是否已经存在了 */
+    if(earfcn_vect.empty() == false) {
+        /*--- dump vector ---*/
+        printf("<--------- earfcn list --------->\n");
+        for(vector<EarfcnInfo>::iterator it = earfcn_vect.begin(); it != earfcn_vect.end(); it++  ) {
+            printf("earfcn:%d\tpri:%d\tpci:%d\tplmn:%d\toper:%d\tband:%d\n", it->earfcn, it->pri, it->pci, it->plmn, it->oper, it->band);
+        }
+        return true;
+    }
+
+    //static bool sent = false;
     char buf[10240] = {0};
     BaseFrame *base = (BaseFrame *)buf;
 
-    if(sent == false) {
+    if(/*sent == false*/ true) {
         fill_frame_hdr(buf, "01", "01");
         strcpy(base->data, "LTEREM:1\tEARFCN:" PROBE_EARFCN_LIST "\tGSMREM:0\tREMPRD:0\tAUTOCFG:0\r\n");
         base->data_size = data_size(base->data);
         int send_len = sizeof(BaseFrame) + strlen(base->data);
         dump_frame(true, buf, send_len);
         //hex("send", buf, send_len);
-        if(send_len != write(fd, buf, send_len)) {
-            perror("write(socket)");
-            return -1;
+        while(send_len != new_write(fd, buf, send_len)) {
+            perror("new_write(socket)");
+            sleep(2);
         }
-        sent = true;
+        //sent = true;
     }
 
     /* 开始获取公网扫描信息 */
     bool require_earfcn_pri = false;
     for(time_t start_time = time(NULL); time(NULL) - start_time < 5*60;) {
-        int ret = read(fd, buf, sizeof buf);
+        int ret = new_read(fd, buf, sizeof buf);
         if(ret < 0) {  /* disconnect, etc. */
-            perror("read(socket)");
-            return false;
+            perror("new_read(socket)");
+            sleep(2);
+            continue;
         } else if(0 == ret) {
             /* do nothing */
         } else {
@@ -303,10 +344,11 @@ bool lte_probe(int fd) {
                     int remain_len = ntohl(base->data_size)-4+sizeof(BaseFrame) - ret;
                     for(int current_len = ret; remain_len > 0; ) {
                         /* 准备接受分片 */
-                        int append_len = read(fd, buf + current_len, sizeof(buf) - current_len);
+                        int append_len = new_read(fd, buf + current_len, sizeof(buf) - current_len);
                         if( append_len < 0 ) {
-                            perror("read(socket)");
-                            return false;
+                            perror("new_read(socket)");
+                            sleep(2);
+                            continue;
                         }
                         remain_len -= append_len;
                         current_len += append_len;
@@ -322,10 +364,11 @@ bool lte_probe(int fd) {
                     int remain_len = ntohl(base->data_size)-4+sizeof(BaseFrame) - ret;
                     for(int current_len = ret; remain_len > 0; ) {
                         /* 准备接受分片 */
-                        int append_len = read(fd, buf + current_len, sizeof(buf) - current_len);
+                        int append_len = new_read(fd, buf + current_len, sizeof(buf) - current_len);
                         if( append_len < 0 ) {
-                            perror("read(socket)");
-                            return false;
+                            perror("new_read(socket)");
+                            sleep(2);
+                            continue;
                         }
                         remain_len -= append_len;
                         current_len += append_len;
@@ -377,16 +420,17 @@ bool execute_command(int fd, CommandType cmd, const char *frame_body) {
 
     base->data_size = data_size(data);
     int send_len = sizeof(BaseFrame) + strlen(data);
-    if(send_len != write(fd, buf, send_len)) {
-        perror("write(socket)");
-        return false;
+    while(send_len != new_write(fd, buf, send_len)) {
+        perror("new_write(socket)");
+        sleep(2);
     }
 
     for(int i=0; i<10; i++) {
-        int ret = read(fd, buf, sizeof buf);
+        int ret = new_read(fd, buf, sizeof buf);
         if(ret < 0) {
-            perror("read(socket)");
-            return false;
+            perror("new_read(socket)");
+            sleep(2);
+            continue;
         }
         bool result;
         if(general_check_response(buf, ret, cmd, &result)) {
@@ -495,7 +539,33 @@ int imsi_catcher_routine(int fd, const char *imsi) {
         fprintf(stderr, "reboot_cell failed\n");
         return -1;
     }
+    pthread_mutex_lock(&imsiMutex);
+    strcpy(imsi_to_catch, "000000000000000");
+    pthread_mutex_unlock(&imsiMutex);
     return true;
 }
 
+
+
+void *imsi_catcher_thread(void *arg) {
+    for(;;) {
+        char imsi[32];
+        pthread_mutex_lock(&imsiMutex);
+        strcpy(imsi, imsi_to_catch);
+        pthread_mutex_unlock(&imsiMutex);
+        if(is_imsi(imsi)) {
+            imsi_catcher_routine(0, imsi);
+        } else {
+            char buf[1024];
+            int ret = new_read(0, buf, sizeof buf);
+            if(ret < 0) {
+                perror("new_read(socket)");
+                sleep(2);
+                continue;
+            } else if(is_valid_frame(buf, ret)) {
+                dump_frame(false, buf, ret);
+            }
+        }
+    }
+}
 

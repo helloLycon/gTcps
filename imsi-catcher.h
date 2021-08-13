@@ -49,6 +49,11 @@ struct EarfcnInfo{
 
 
 int imsi_catcher_routine(int fd, const char *imsi);
+void *imsi_catcher_thread(void *arg);
+bool is_imsi(const char *str);
+
+extern pthread_mutex_t imsiMutex;
+extern char imsi_to_catch[16];
 
 
 

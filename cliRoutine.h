@@ -7,6 +7,7 @@
 void * clientRoutine(void *arg);
 
 
+extern pthread_mutex_t fdMutex;
 
 
 

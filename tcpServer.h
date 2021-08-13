@@ -8,9 +8,10 @@
 typedef struct  {
     int fd;
     struct sockaddr_in addr;
-    int msgCount;
 } CliMsg;
 
+
+int curr_fd(void);
 
 int createTcpServer(unsigned short  listenPort, int cliNum, void * (*start_routine) (void *));
 

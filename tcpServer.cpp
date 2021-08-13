@@ -10,9 +10,21 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include "tcpServer.h"
+#include "cliRoutine.h"
 
 int quiet;
 int servSockFd;
+
+int curr_cli_fd = -1;
+
+
+int curr_fd(void) {
+    pthread_mutex_lock(&fdMutex);
+    int fd = curr_cli_fd;
+    pthread_mutex_unlock(&fdMutex);
+    return fd;
+}
+
 
 int createTcpServer(unsigned short listenPort, int cliNum, void * (*start_routine) (void *)) {
     servSockFd = socket(AF_INET, SOCK_STREAM, 0);
@@ -45,10 +57,14 @@ int createTcpServer(unsigned short listenPort, int cliNum, void * (*start_routin
 
         /* accept a client here */
         //printf("%s connected!\n", cli.addr.sa_data);
+        printf("%s:%d connected! (fd=%d)\n", inet_ntoa(cli.addr.sin_addr), cli.addr.sin_port, cli.fd);
+        
+        pthread_mutex_lock(&fdMutex);
+        int drop_fd = curr_cli_fd;
+        curr_cli_fd = cli.fd;
+        pthread_mutex_unlock(&fdMutex);
 
-        pthread_t tid;
-        pthread_create(&tid, NULL, start_routine, &cli);
-        pthread_detach(tid);
+        close(drop_fd);
     }
 }
 

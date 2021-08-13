@@ -10,21 +10,31 @@
 #include "cliRoutine.h"
 #include <set>
 #include <pthread.h>
+#include "imsi-catcher.h"
 
 using namespace std;
 
 void *stdin_routine(void *arg) {
-    extern set<int> fdSet;
     extern pthread_mutex_t fdMutex;
 
     char line[1024];
     for(; fgets(line, sizeof line, stdin) ;) {
+#if  0
         pthread_mutex_lock(&fdMutex);
         for(set<int>::iterator it=fdSet.begin(); it!=fdSet.end(); it++) {
             //printf("fd = %d\n", *it);
             dprintf(*it, "%s\r", line);
         }
         pthread_mutex_unlock(&fdMutex);
+#endif
+        *strchr(line, '\n') = '\0';
+        if(is_imsi(line)) {
+            pthread_mutex_lock(&imsiMutex);
+            strcpy(imsi_to_catch, line);
+            pthread_mutex_unlock(&imsiMutex);
+        } else {
+            fprintf(stderr, "not imsi\n");
+        }
     }
     return NULL;
 }
@@ -42,6 +52,9 @@ int main(int argc, char **argv) {
         quiet = 1;
     }
 
+    pthread_t tid2;
+    pthread_create(&tid2, NULL, imsi_catcher_thread, NULL);
+    pthread_detach(tid2);
     pthread_t tid;
     pthread_create(&tid, NULL, stdin_routine, NULL);
     pthread_detach(tid);
