@@ -28,6 +28,7 @@ enum CommandType {
     REBOOT_CELL,
     NET_INFO,
     SIB5,
+    COMMAND_TYPE_COUNT,
 };
 
 struct CommandInfo {

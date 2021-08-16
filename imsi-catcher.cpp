@@ -20,6 +20,7 @@ using namespace std;
 pthread_mutex_t imsiMutex = PTHREAD_MUTEX_INITIALIZER;
 char imsi_to_catch[16];
 
+#if 0
 const CommandInfo command_info[] = {
     [SET_IMSI_BLACKLIST] = {
         .frame_proto = "32",
@@ -46,6 +47,24 @@ const CommandInfo command_info[] = {
         .name = "SIB5",
     },
 };
+#else
+CommandInfo command_info[COMMAND_TYPE_COUNT] = {0};
+
+void command_info_init(CommandInfo *info) {
+    info[SET_IMSI_BLACKLIST].frame_proto = "32";
+    info[SET_IMSI_BLACKLIST].name = "SET_IMSI_BLACKLIST";
+    info[SET_PROBE_EARFCN].frame_proto = "31";
+    info[SET_PROBE_EARFCN].name = "SET_PROBE_EARFCN";
+    info[SET_PCI].frame_proto = "02";
+    info[SET_PCI].name = "SET_PCI";
+    info[REBOOT_CELL].frame_proto = "20";
+    info[REBOOT_CELL].name = "REBOOT_CELL";
+    info[NET_INFO].frame_proto = "01";
+    info[NET_INFO].name = "NET_INFO";
+    info[SIB5].frame_proto = "05";
+    info[SIB5].name = "SIB5";
+}
+#endif
 
 vector<EarfcnInfo> earfcn_vect;
 
@@ -135,7 +154,7 @@ void dump_frame(bool send, void *frame, int len) {
         memcpy(frame_type, base->frame_type, 2);
         memcpy(frame_proto, base->frame_proto, 2);
         memcpy(frame_body, base->data, ntohl(base->data_size) - 4);
-        printf("[%s%s, %s-%s] %s\n", send?"-> ":"<- ", command_info[get_cmd_type_from_frame(frame)].name, frame_type, frame_proto, frame_body);
+        printf("[%s%s, %s-%s] %s\n", send?"-> ":"<- ", get_cmd_type_from_frame(frame)==COMMAND_TYPE_COUNT?"unknown":command_info[get_cmd_type_from_frame(frame)].name, frame_type, frame_proto, frame_body);
     } else {
         fprintf(stderr, "%s: invalid format\n", __func__);
     }
@@ -188,49 +207,49 @@ int earfcn_to_band(int earfcn) {
     };
     static const BandEarfcnMap band_map[] = {
         {
-            .band = 1,
-            .lower = 0,
-            .upper = 599,
+            /*.band =*/ 1,
+            /*.lower =*/ 0,
+            /*.upper =*/ 599,
         },
         {
-            .band = 3,
-            .lower = 1200,
-            .upper = 1949,
+            /*.band =*/ 3,
+            /*.lower =*/ 1200,
+            /*.upper =*/ 1949,
         },
         {
-            .band = 5,
-            .lower = 2400,
-            .upper = 2649,
+            /*.band =*/ 5,
+            /*.lower =*/ 2400,
+            /*.upper =*/ 2649,
         },
         {
-            .band = 8,
-            .lower = 3450,
-            .upper = 3799,
+            /*.band =*/ 8,
+            /*.lower =*/ 3450,
+            /*.upper =*/ 3799,
         },
         {
-            .band = 34,
-            .lower = 36200,
-            .upper = 36349,
+            /*.band =*/ 34,
+            /*.lower =*/ 36200,
+            /*.upper =*/ 36349,
         },
         {
-            .band = 38,
-            .lower = 37750,
-            .upper = 38249,
+            /*.band =*/ 38,
+            /*.lower =*/ 37750,
+            /*.upper =*/ 38249,
         },
         {
-            .band = 39,
-            .lower = 38250,
-            .upper = 38649,
+            /*.band =*/ 39,
+            /*.lower =*/ 38250,
+            /*.upper =*/ 38649,
         },
         {
-            .band = 40,
-            .lower = 38650,
-            .upper = 39649,
+            /*.band =*/ 40,
+            /*.lower =*/ 38650,
+            /*.upper =*/ 39649,
         },
         {
-            .band = 41,
-            .lower = 39650,
-            .upper = 41589,
+            /*.band =*/ 41,
+            /*.lower =*/ 39650,
+            /*.upper =*/ 41589,
         },
     };
     for(int i = 0; i<sizeof(band_map)/sizeof(band_map[0]); i++) {
@@ -501,9 +520,14 @@ int imsi_catcher_routine(int fd, const char *imsi) {
     /* find top priority earfcn in each band */
     int earfcns[16] = {0};
     for(int i=0; band_list[i]; i++) {
+#if  0
         EarfcnInfo min_pri = {
             .pri = 999,
         };
+#else
+        EarfcnInfo min_pri = {0};
+        min_pri.pri = 999;
+#endif
         for(vector<EarfcnInfo>::iterator it = earfcn_vect.begin(); it!=earfcn_vect.end(); it++) {
             if(it->oper == oper && it->band == band_list[i] && it->pri < min_pri.pri) {
                 min_pri = *it;
@@ -548,6 +572,7 @@ int imsi_catcher_routine(int fd, const char *imsi) {
 
 
 void *imsi_catcher_thread(void *arg) {
+    command_info_init(command_info);
     for(;;) {
         char imsi[32];
         pthread_mutex_lock(&imsiMutex);
