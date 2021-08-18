@@ -44,7 +44,7 @@ struct EarfcnInfo{
     int pri;
     int pci;
     int plmn;
-    int oper;
+    int isp;
     int band;
 } ;
 

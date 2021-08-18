@@ -176,7 +176,7 @@ int parse_int_following_keyword(const char *haystack, const char *kw) {
     }
 }
 
-int plmn_to_operator(int plmn) {
+int plmn_to_isp(int plmn) {
     switch(plmn) {
         case 46000:
         case 46002:
@@ -282,7 +282,7 @@ void handle_earfcn_list_data(const char *str) {
         item.earfcn = parse_int_following_keyword(line, earfcn_keyword);
         item.pci = parse_int_following_keyword(line, pci_keyword);
         item.plmn = parse_int_following_keyword(line, plmn_keyword);
-        item.oper = plmn_to_operator(item.plmn);
+        item.isp = plmn_to_isp(item.plmn);
         item.band = earfcn_to_band(item.earfcn);
         earfcn_vect.push_back(item);
     }
@@ -319,7 +319,7 @@ bool lte_probe(int fd) {
         /*--- dump vector ---*/
         printf("<--------- earfcn list --------->\n");
         for(vector<EarfcnInfo>::iterator it = earfcn_vect.begin(); it != earfcn_vect.end(); it++  ) {
-            printf("earfcn:%d\tpri:%d\tpci:%d\tplmn:%d\toper:%d\tband:%d\n", it->earfcn, it->pri, it->pci, it->plmn, it->oper, it->band);
+            printf("earfcn:%d\tpri:%d\tpci:%d\tplmn:%d\tISP:%d\tband:%d\n", it->earfcn, it->pri, it->pci, it->plmn, it->isp, it->band);
         }
         return true;
     }
@@ -400,7 +400,7 @@ bool lte_probe(int fd) {
                     /*--- dump vector ---*/
                     printf("<--------- earfcn list --------->\n");
                     for(vector<EarfcnInfo>::iterator it = earfcn_vect.begin(); it != earfcn_vect.end(); it++  ) {
-                        printf("earfcn:%d\tpri:%d\tpci:%d\tplmn:%d\toper:%d\tband:%d\n", it->earfcn, it->pri, it->pci, it->plmn, it->oper, it->band);
+                        printf("earfcn:%d\tpri:%d\tpci:%d\tplmn:%d\tISP:%d\tband:%d\n", it->earfcn, it->pri, it->pci, it->plmn, it->isp, it->band);
                     }
                     return true;
                 }
@@ -500,13 +500,13 @@ int imsi_catcher_routine(int fd, const char *imsi) {
     strcpy(plmn_str, imsi);
     plmn_str[5] = '\0';
     int plmn = atoi(plmn_str);
-    int oper = plmn_to_operator(plmn);
-    printf("=> operator = %d\n", oper);
+    int isp = plmn_to_isp(plmn);
+    printf("=> ISP = %d\n", isp);
 
     /* list bands in supposed operator */
     int band_list[16] = {0};
     for(vector<EarfcnInfo>::iterator it = earfcn_vect.begin(); it!=earfcn_vect.end(); it++) {
-        if(it->oper != oper) {
+        if(it->isp != isp) {
             continue;
         }
         int index;
@@ -521,20 +521,20 @@ int imsi_catcher_routine(int fd, const char *imsi) {
     int earfcns[16] = {0};
     for(int i=0; band_list[i]; i++) {
 #if  0
-        EarfcnInfo min_pri = {
+        EarfcnInfo max_pri = {
             .pri = 999,
         };
 #else
-        EarfcnInfo min_pri = {0};
-        min_pri.pri = 999;
+        EarfcnInfo max_pri = {0};
+        max_pri.pri = -999;
 #endif
         for(vector<EarfcnInfo>::iterator it = earfcn_vect.begin(); it!=earfcn_vect.end(); it++) {
-            if(it->oper == oper && it->band == band_list[i] && it->pri < min_pri.pri) {
-                min_pri = *it;
+            if(it->isp == isp && it->band == band_list[i] && it->pri > max_pri.pri) {
+                max_pri = *it;
             }
         }
-        earfcns[i] = min_pri.earfcn;
-        printf("Band %d: %d(pri=%d)\n", band_list[i], earfcns[i], min_pri.pri);
+        earfcns[i] = max_pri.earfcn;
+        printf("Band %d: %d(pri=%d)\n", band_list[i], earfcns[i], max_pri.pri);
     }
 
     
