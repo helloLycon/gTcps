@@ -18,7 +18,7 @@
 using namespace std;
 
 pthread_mutex_t imsiMutex = PTHREAD_MUTEX_INITIALIZER;
-char imsi_to_catch[16];
+char imsi_to_catch[16] = "000000000000000";
 
 #if 0
 const CommandInfo command_info[] = {
@@ -566,6 +566,7 @@ int imsi_catcher_routine(int fd, const char *imsi) {
     pthread_mutex_lock(&imsiMutex);
     strcpy(imsi_to_catch, "000000000000000");
     pthread_mutex_unlock(&imsiMutex);
+    printf("=> imsi command success\n");
     return true;
 }
 

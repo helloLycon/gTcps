@@ -14,8 +14,11 @@
 
 using namespace std;
 
+#define ERROR_STRING "=> error: "
+
 void *stdin_routine(void *arg) {
     extern pthread_mutex_t fdMutex;
+    const char *imsi_cmd = "imsi=";
 
     char line[1024];
     for(; fgets(line, sizeof line, stdin) ;) {
@@ -28,12 +31,24 @@ void *stdin_routine(void *arg) {
         pthread_mutex_unlock(&fdMutex);
 #endif
         *strchr(line, '\n') = '\0';
-        if(is_imsi(line)) {
+        if(!strncmp(line, imsi_cmd, strlen(imsi_cmd))) {
+            /* imsi command */
             pthread_mutex_lock(&imsiMutex);
-            strcpy(imsi_to_catch, line);
+            char tmp[16];
+            strcpy(tmp, imsi_to_catch);
             pthread_mutex_unlock(&imsiMutex);
+            if(tmp[0] == '4') {
+                fprintf(stderr, ERROR_STRING "busy\n");
+            } else if(is_imsi(line + strlen(imsi_cmd))) {
+                pthread_mutex_lock(&imsiMutex);
+                strcpy(imsi_to_catch, line + strlen(imsi_cmd));
+                printf("OK (imsi=%s)\n", imsi_to_catch);
+                pthread_mutex_unlock(&imsiMutex);
+            } else {
+                fprintf(stderr, ERROR_STRING "invalid imsi\n");
+            }
         } else {
-            fprintf(stderr, "not imsi\n");
+            fprintf(stderr, ERROR_STRING "invalid command\n");
         }
     }
     return NULL;
