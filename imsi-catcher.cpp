@@ -14,6 +14,7 @@
 #include "imsi-catcher.h"
 #include "tcpServer.h"
 #include "cliRoutine.h"
+#include "at.h"
 
 using namespace std;
 
@@ -146,6 +147,14 @@ CommandType get_cmd_type_from_frame(void *frame) {
 }
 
 
+bool is_imsi_catch_frame(const char *body) {
+    if(strstr(body, "IMSI:") && strstr(body, "RSRP:") && strstr(body, "RSSI:")) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
 void dump_frame(bool send, void *frame, int len) {
     if(is_valid_frame(frame, len)) {
         BaseFrame *base = (BaseFrame *)frame;
@@ -155,6 +164,9 @@ void dump_frame(bool send, void *frame, int len) {
         memcpy(frame_proto, base->frame_proto, 2);
         memcpy(frame_body, base->data, ntohl(base->data_size) - 4);
         printf("[%s%s, %s-%s] %s\n", send?"-> ":"<- ", get_cmd_type_from_frame(frame)==COMMAND_TYPE_COUNT?"unknown":command_info[get_cmd_type_from_frame(frame)].name, frame_type, frame_proto, frame_body);
+        if(is_imsi_catch_frame(frame_body)) {
+            dprintf(uart_info.uart_fd, "[%s%s, %s-%s] %s\n", send?"-> ":"<- ", get_cmd_type_from_frame(frame)==COMMAND_TYPE_COUNT?"unknown":command_info[get_cmd_type_from_frame(frame)].name, frame_type, frame_proto, frame_body);
+        }
     } else {
         fprintf(stderr, "%s: invalid format\n", __func__);
     }
@@ -540,10 +552,12 @@ int imsi_catcher_routine(int fd, const char *imsi) {
     
     if(set_imsi_blacklist(fd, imsi) == false) {
         fprintf(stderr, "set_imsi_blacklist failed\n");
+        dprintf(uart_info.uart_fd, "set_imsi_blacklist failed\n");
         return -1;
     }
     if(set_probe_earfcn(fd, earfcns) == false) {
         fprintf(stderr, "set_probe_earfcn failed\n");
+        dprintf(uart_info.uart_fd, "set_probe_earfcn failed\n");
         return -1;
     }
 
@@ -557,16 +571,19 @@ int imsi_catcher_routine(int fd, const char *imsi) {
     printf("=> min_count_index = %d\n", min_count_index);
     if(set_pci(fd, 501 + min_count_index) == false) {
         fprintf(stderr, "set_pci failed\n");
+        dprintf(uart_info.uart_fd, "set_pci failed\n");
         return -1;
     }
     if(reboot_cell(fd) == false) {
         fprintf(stderr, "reboot_cell failed\n");
+        dprintf(uart_info.uart_fd, "reboot_cell failed\n");
         return -1;
     }
     pthread_mutex_lock(&imsiMutex);
     strcpy(imsi_to_catch, "000000000000000");
     pthread_mutex_unlock(&imsiMutex);
     printf("=> imsi command success\n");
+    dprintf(uart_info.uart_fd, "=> imsi command success\n");
     return true;
 }
 

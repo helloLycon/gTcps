@@ -11,6 +11,7 @@
 #include <set>
 #include <pthread.h>
 #include "imsi-catcher.h"
+#include "at.h"
 
 using namespace std;
 
@@ -39,20 +40,27 @@ void *stdin_routine(void *arg) {
             pthread_mutex_unlock(&imsiMutex);
             if(tmp[0] == '4') {
                 fprintf(stderr, ERROR_STRING "busy\n");
+                dprintf(uart_info.uart_fd, ERROR_STRING "busy\n");
             } else if(is_imsi(line + strlen(imsi_cmd))) {
                 pthread_mutex_lock(&imsiMutex);
                 strcpy(imsi_to_catch, line + strlen(imsi_cmd));
                 printf("OK (imsi=%s)\n", imsi_to_catch);
+                dprintf(uart_info.uart_fd, "OK (imsi=%s)\n", imsi_to_catch);
                 pthread_mutex_unlock(&imsiMutex);
             } else {
                 fprintf(stderr, ERROR_STRING "invalid imsi\n");
+                dprintf(uart_info.uart_fd, ERROR_STRING "invalid imsi\n");
             }
         } else {
             fprintf(stderr, ERROR_STRING "invalid command\n");
+            dprintf(uart_info.uart_fd, ERROR_STRING "invalid command\n");
         }
     }
     return NULL;
 }
+
+serial_port_info uart_info;
+
 
 int main(int argc, char **argv) {
     extern int quiet;
@@ -66,6 +74,19 @@ int main(int argc, char **argv) {
     } else {
         quiet = 1;
     }
+
+    /*---- uart init ----*/
+    uart_info.baud_rate = 115200;
+    uart_info.dev_name = "/dev/ttyS0";
+    if(do_uart_init(&uart_info)) {
+        perror("init uart");
+        return -1;
+    }
+#if 1
+    close(fileno(stdin));
+    dup2(uart_info.uart_fd, 0);
+    //close(uart_info.uart_fd);
+#endif
 
     pthread_t tid2;
     pthread_create(&tid2, NULL, imsi_catcher_thread, NULL);
